@@ -1,4 +1,5 @@
 discord.py>=2.3
+easyocr          # 繁中+英文 OCR
 pytesseract
 opencv-python-headless
-flask
+flask            # keep-alive
