@@ -7,4 +7,4 @@ services:
     startCommand: "python main.py"
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        sync: false   # 在 Render 面板手動填值
