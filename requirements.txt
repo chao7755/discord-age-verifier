@@ -1,5 +1,3 @@
-discord.py>=2.3
-easyocr          # 繁中+英文 OCR
-pytesseract
-opencv-python-headless
-flask            # keep-alive
+discord.py==2.5.2
+easyocr==1.7.2
+waitress==3.0.0
