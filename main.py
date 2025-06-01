@@ -27,7 +27,9 @@ MINIMUM_AGE        = 18
 # ======== Discord Bot ========
 intents = discord.Intents.default()
 intents.members = True
-bot = commands.Bot(intents=intents)
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ======== Flask 保活 ========
 app = Flask(__name__)
