@@ -4,6 +4,8 @@ import os, re, asyncio, logging, traceback
 import discord
 from discord import app_commands, Interaction, File
 from discord.ext import commands, tasks
+print("DEBUG: BOT_TOKEN =", os.getenv("BOT_TOKEN"))
+print("DEBUG: GUILD_ID  =", os.getenv("GUILD_ID"))
 
 # ===== 基本設定（從環境變數讀） =====
 BOT_TOKEN            = os.getenv("BOT_TOKEN")             # Discord Bot token
