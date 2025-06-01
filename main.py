@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(messag
 
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GUILD_ID         = int(os.getenv("GUILD_ID", 0))
-ROLE_ID = 1375827130063126538          # 「成年妹寶」角色 ID
+VERIFIED_ROLE_ID = int(os.getenv("VERIFIED_ROLE_ID", 0))          # 「成年妹寶」角色 ID
 
 if not all([BOT_TOKEN, GUILD_ID, VERIFIED_ROLE_ID]):
     raise RuntimeError("❌ 請在 Render 的 Environment 變數填好 BOT_TOKEN / GUILD_ID / VERIFIED_ROLE_ID！")
