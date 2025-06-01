@@ -75,6 +75,25 @@ async def detect_birthdate(attachment: discord.Attachment) -> date | None:
     # 4. 找日期
     return await parse_date_from_text(text)
 
+
+# ---------- Slash 指令：/setupverifybutton ----------
+@tree.command(
+    name        = "setupverifybutton",
+    description = "（管理員）送出驗證按鈕訊息"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_verify_button(inter: Interaction):
+    await send_verify_button(inter.channel)
+    await inter.response.send_message("✅ 已送出驗證訊息！", ephemeral=True)
+
+@setup_verify_button.error
+async def on_no_perm(_, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await _.response.send_message("❌ 只有管理員能用這個指令哦！", ephemeral=True)
+    else:
+        raise error
+
+
 # ---------- 驗證按鈕 ----------
 class VerifyButton(ui.Button):
     def __init__(self):
