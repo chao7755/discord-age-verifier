@@ -38,7 +38,7 @@ def home(): return "Bot is alive!"
 Thread(target=lambda: app.run(host="0.0.0.0", port=8080), daemon=True).start()
 
 # ======== OCR 工具 ========
-reader = easyocr.Reader(['en', 'ch_sim', 'ch_tra'], gpu=False)
+reader = easyocr.Reader(['ch_tra', 'en'], gpu=False)
 
 def extract_date(text: str):
     ymd = re.search(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', text)
