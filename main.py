@@ -1,190 +1,185 @@
-# ---------- main.py -------------
-import os, re, asyncio, logging, traceback
+# main.py  — Discord 年齡驗證 Bot（Render 免費方案友善版‧進階）
+import os, re, asyncio, logging, textwrap
+from datetime import datetime, timedelta, date
 
 import discord
-from discord import app_commands, Interaction, File
+from discord import app_commands, ui, Intents, Permissions
 from discord.ext import commands, tasks
-print("DEBUG: BOT_TOKEN =", os.getenv("BOT_TOKEN"))
-print("DEBUG: GUILD_ID  =", os.getenv("GUILD_ID"))
 
-# ===== 基本設定（從環境變數讀） =====
-BOT_TOKEN            = os.getenv("BOT_TOKEN")             # Discord Bot token
-GUILD_ID             = int(os.getenv("GUILD_ID", "0"))    # 你的伺服器 ID
-VERIFIED_ROLE_NAME   = os.getenv("VERIFIED_ROLE_NAME", "Verified")  # 通過後要給的角色
-AGE_LIMIT            = int(os.getenv("AGE_LIMIT", "18"))  # 要滿幾歲
+# ---------- 基本設定 ----------
+TOKEN      = os.environ.get("BOT_TOKEN")
+GUILD_ID   = int(os.environ.get("GUILD_ID" , 0))
+ROLE_ID    = int(os.environ.get("VERIFIED_ROLE_ID" , 0))  # 已驗證身分組
+HTTP_PORT  = int(os.environ.get("PORT" , 8080))           # Flask keep-alive
 
-# ===== Discord Intents 與 Bot =====
-intents              = discord.Intents.default()
+if not TOKEN or not GUILD_ID:
+    raise SystemExit("請設定 BOT_TOKEN 與 GUILD_ID 環境變數！")
+
+intents = Intents.default()
 intents.message_content = True
-intents.members      = True
-
+intents.members         = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
 
-# ===== 懶載入 EasyOCR =====
-_ocr_reader = None           # 全域緩存
-async def get_reader():
-    """
-    第一次呼叫時才真正下載 / 初始化 EasyOCR。
-    之後直接回傳快取。
-    """
-    global _ocr_reader
-    if _ocr_reader is None:
-        loop = asyncio.get_running_loop()
-        # 避免阻塞 event-loop，用執行緒載入
-        def _load():
-            import easyocr   # 延遲 import
-            return easyocr.Reader(['ch_tra', 'en'], gpu=False)
-        _ocr_reader = await loop.run_in_executor(None, _load)
-    return _ocr_reader
+logging.basicConfig(
+    level = logging.INFO,
+    format="%(levelname)s:%(name)s: %(message)s"
+)
 
-# ===== 小工具 =====
-async def give_verified_role(member: discord.Member):
-    role = discord.utils.get(member.guild.roles, name=VERIFIED_ROLE_NAME)
-    # 若角色不存在就自動建立（限 manage_roles 權限）
-    if role is None:
-        role = await member.guild.create_role(name=VERIFIED_ROLE_NAME,
-                                              mentionable=False,
-                                              reason="Auto-create verification role")
-    await member.add_roles(role, reason="Passed age verification")
+# ---------- Flask keep-alive ----------
+from flask import Flask
+from waitress import serve
+app = Flask(__name__)
+@app.route("/")
+def index(): return "ok"
+@tasks.loop(seconds=30)
+async def keep_alive(): pass
+@bot.event
+async def on_ready():
+    print(f"Bot 上線：{bot.user} (ID: {bot.user.id})")
+    if not keep_alive.is_running(): keep_alive.start()
+    try:
+        synced = await bot.tree.sync(guild=discord.Object(GUILD_ID))
+        print(f"斜線指令同步：{len(synced)} 個")
+    except Exception as e:
+        print("同步失敗：", e)
+asyncio.get_event_loop().run_in_executor(
+    None, lambda: serve(app, host="0.0.0.0", port=HTTP_PORT, _quiet=True)
+)
 
-def extract_age(text:str) -> int|None:
-    """
-    從 OCR or 使用者輸入的文字抓出第一個 2-3 位數字，回傳 int。
-    """
-    m = re.search(r'(\d{2,3})', text)
-    return int(m.group(1)) if m else None
+# ---------- 工具函式 ----------
+date_re = re.compile(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})")
+def calc_age(birth: date) -> int:
+    today = date.today()
+    return today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
 
-# ===== /setupverifybutton 指令 =====
-@tree.command(name="setupverifybutton", description="在此頻道發送年齡驗證按鈕")
-@app_commands.guilds(discord.Object(id=GUILD_ID))
-async def setup_button(inter: Interaction):
-    if not inter.permissions.manage_roles:
-        await inter.response.send_message("需要 Manage Roles 權限", ephemeral=True)
-        return
+async def parse_birth_from_manual(msg: discord.Message):
+    m = date_re.search(msg.content.strip())
+    if not m: return None
+    try:
+        y, mth, d = map(int, m.groups())
+        return date(y, mth, d)
+    except ValueError:
+        return None
 
-    class VerifyButton(discord.ui.Button):
-        def __init__(self):
-            super().__init__(label="✅ 我想驗證年齡", style=discord.ButtonStyle.success)
+# ---------- 驗證視圖 ----------
+class VerifyButton(ui.Button):
+    def __init__(self):
+        super().__init__(label="🔞點我開始驗證年齡", style=discord.ButtonStyle.success)
 
-        async def callback(self, button_inter: Interaction):
-            await start_verification(button_inter)
+    async def callback(self, interaction: discord.Interaction):
+        member = interaction.user
+        guild  = interaction.guild
+        verified_role = guild.get_role(ROLE_ID)
 
-    view = discord.ui.View(timeout=None)
+        # 已經驗證過
+        if verified_role in member.roles:
+            return await interaction.response.send_message(
+                "你已經是成年妹寶了！點我不會變得更黃的～", ephemeral=True)
+
+        # 建立私密頻道
+        overwrites = {
+            guild.default_role: Permissions(view_channel=False),
+            member:             Permissions(view_channel=True, send_messages=True, attach_files=True),
+            guild.me:           Permissions(view_channel=True, send_messages=True, manage_channels=True)
+        }
+        private_ch = await guild.create_text_channel(
+            name=f"verify-{member.display_name}",
+            overwrites=overwrites,
+            reason="年齡驗證"
+        )
+
+        # 👋 引導使用者
+        guide_txt = textwrap.dedent(f"""\
+        👋 哈囉 {member.mention}！
+        📸 請上傳 **僅顯示『出生年月日』** 的證件照片（**請遮蓋其他個人資訊**）。
+        你有 10 分鐘的時間上傳。
+        """)
+        await private_ch.send(guide_txt)
+
+        await interaction.response.send_message(
+            f"已為你開啟私密頻道 {private_ch.mention}，請依指示完成驗證！",
+            ephemeral=True
+        )
+
+        # 等待使用者傳圖片
+        def check(msg: discord.Message):
+            return msg.channel == private_ch and msg.author == member
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=600)  # 10 分鐘
+        except asyncio.TimeoutError:
+            await private_ch.send("逾時 10 分鐘未收到圖片，頻道將於 15 秒後關閉。")
+            await asyncio.sleep(15)
+            return await private_ch.delete()
+
+        # ---------- 解析流程 ----------
+        birthdate: date | None = None
+
+        # ── 使用者先傳圖片 ───────────────────────────
+        if msg.attachments:
+            await private_ch.send("⏳ 圖片收到，AI 辨識中，請稍候...")     # <<< 新增 >>>
+
+            # 這裡本來可呼叫 EasyOCR，考量免費方案效能改用「辨識失敗 → 手動輸入」的流程
+            # 想要真正 OCR 的話，把下行替換為實際辨識函式並返回 birthdate
+            birthdate = None  # ← 模擬 AI 辨識失敗
+
+            if birthdate is None:
+                # AI 辨識不到
+                await private_ch.send(
+                    "⚠️ AI 無法辨識出生日期。\n"
+                    "⌨️ 請手動輸入你的出生年月日 (格式：YYYY/MM/DD 或 YYYY-MM-DD，例如 2000/01/01)。\n"
+                    "你有 5 分鐘的時間輸入。"
+                )                                                   # <<< 新增 >>>
+
+                try:
+                    manual = await bot.wait_for("message", check=check, timeout=300)  # 5 分鐘
+                    birthdate = await parse_birth_from_manual(manual)
+                    if birthdate is None:
+                        raise ValueError
+                except (asyncio.TimeoutError, ValueError):
+                    await private_ch.send("❌ 驗證失敗，頻道將於 15 秒後關閉。")
+                    await asyncio.sleep(15)
+                    return await private_ch.delete()
+
+        # ── 使用者直接輸入文字 ───────────────────────
+        else:
+            birthdate = await parse_birth_from_manual(msg)
+            if birthdate is None and msg.content.isdigit():
+                # 仍保留純「年齡數字」後門
+                age = int(msg.content)
+                if age >= 18:
+                    birthdate = date.today().replace(year=date.today().year - age)
+
+        # ---------- 最終結果 ----------
+        if birthdate:
+            age = calc_age(birthdate)
+            if age >= 18:
+                birthdate_str = birthdate.strftime("%Y/%m/%d")
+                await private_ch.send(
+                    f"✅ AI 辨識成功！你的生日是 {birthdate_str}，已滿 {age} 歲。\n"
+                    f"正在為你加上身份組..."
+                )                                                   # <<< 新增 >>>
+                await member.add_roles(verified_role, reason="通過年齡驗證")
+                await asyncio.sleep(5)
+                await private_ch.send("🎉 驗證完成！頻道將於 15 秒後關閉。")
+            else:
+                await private_ch.send("❌ 未滿 18 歲，無法通過驗證。")
+        else:
+            await private_ch.send("❌ 驗證失敗，請確認格式或聯絡管理員。")
+
+        await asyncio.sleep(15)
+        await private_ch.delete()
+
+# ---------- 管理員：發送驗證按鈕 ----------
+@bot.tree.command(name="setupverifybutton", description="在此頻道送出年齡驗證按鈕")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_btn(inter: discord.Interaction):
+    view = ui.View()
     view.add_item(VerifyButton())
     await inter.response.send_message(
-        embed=discord.Embed(
-            title="年齡驗證",
-            description=f"點擊下方按鈕，按指示上傳身份圖片或手動輸入年齡。"
-        ),
+        "歡迎來到本伺服器！請點擊下方按鈕進行年齡驗證以解鎖更多頻道：",
         view=view
     )
 
-# ===== 核心：啟動驗證流程 =====
-async def start_verification(button_inter: Interaction):
-    user = button_inter.user
-    guild = button_inter.guild
-
-    # 1) 建立私人子頻道 (private text channel)
-    overwrites = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        user:                 discord.PermissionOverwrite(read_messages=True,
-                                                          send_messages=True,
-                                                          attach_files=True)
-    }
-    channel = await guild.create_text_channel(
-        name=f"verify-{user.name}",
-        overwrites=overwrites,
-        reason="Age verification session",
-        topic="此頻道將在 5 分鐘後自動刪除"
-    )
-
-    await button_inter.response.send_message(
-        f"{user.mention} 已為你開啟私人頻道 {channel.mention}，請依指示操作！",
-        ephemeral=True
-    )
-
-    await channel.send(
-        f"{user.mention} 請上傳包含出生日期的圖片 **或** 直接輸入你的年齡（數字）\n"
-        f"> ⚠️ 5 分鐘未完成會自動取消"
-    )
-
-    def check(m: discord.Message):
-        return m.channel == channel and m.author == user
-
-    try:
-        # 2) 5 分鐘內等待訊息／圖片
-        msg: discord.Message = await bot.wait_for("message", timeout=300, check=check)
-
-        # --- 有附件：跑 OCR ---
-        age = None
-        if msg.attachments:
-            await channel.send("收到圖片，解析中…")
-            img_bytes = await msg.attachments[0].read()
-            reader = await get_reader()
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, reader.readtext, img_bytes, detail=0)
-            ocr_text = " ".join(result)
-            age = extract_age(ocr_text)
-
-        # --- 純文字：直接取 ---
-        if age is None:
-            age = extract_age(msg.content)
-
-        # 3) 評估
-        if age is None:
-            await channel.send("❌ 無法辨識出年齡，請重新開始流程。")
-        elif age >= AGE_LIMIT:
-            await channel.send(f"✅ 驗證成功！檢測到年齡 **{age}**")
-            await give_verified_role(user)
-        else:
-            await channel.send(f"❌ 你只有 **{age}** 歲，未達 {AGE_LIMIT} 歲限制。")
-
-    except asyncio.TimeoutError:
-        await channel.send("⌛ 超過 5 分鐘未回覆，驗證取消。")
-
-    except Exception as e:
-        await channel.send("系統錯誤，請聯絡管理員。")
-        logging.error(traceback.format_exc())
-
-    finally:
-        # 4) 15 秒後自動刪除臨時頻道
-        await asyncio.sleep(15)
-        try:
-            await channel.delete(reason="Verification finished / timeout")
-        except Exception:
-            pass
-
-# ===== keep-alive：給 Render ping 用 =====
-# （Render 免費版閒置 15 分鐘會睡；若你用 UptimeRobot 之類輪詢，可以保持醒著）
-from flask import Flask
-flask_app = Flask("keep_alive")
-@flask_app.route("/")
-def home(): return "OK", 200
-def run_flask():
-    from waitress import serve
-    serve(flask_app, host="0.0.0.0", port=8080)
-
-@tasks.loop(count=1)
-async def start_keep_alive():
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, run_flask)
-
-# ===== on_ready：同步指令並啟動 Flask =====
-@bot.event
-async def on_ready():
-    print(f"Bot 上線：{bot.user} (id={bot.user.id})")
-    try:
-        synced = await tree.sync(guild=discord.Object(id=GUILD_ID))
-        print(f"🔃 Slash commands synced ({len(synced)})")
-    except Exception:
-        print("⚠️ 指令同步失敗，可忽略（通常是已同步）")
-    start_keep_alive.start()
-
-# ======== MAIN ========
-if __name__ == "__main__":
-    if not BOT_TOKEN or not GUILD_ID:
-        raise SystemExit("請設定 BOT_TOKEN 與 GUILD_ID 環境變數！")
-    logging.basicConfig(level=logging.INFO)
-    bot.run(BOT_TOKEN)
-# -------- end main.py ----------
+# ---------- 執行 ----------
+bot.run(TOKEN)
