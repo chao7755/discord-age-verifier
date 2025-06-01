@@ -41,20 +41,26 @@ reader = easyocr.Reader(['en', 'ch_sim', 'ch_tra'], gpu=False)
 def extract_date(text: str):
     ymd = re.search(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', text)
     dmy = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', text)
-    if ymd: y, m, d = ymd.groups()
-    elif dmy: d, m, y = dmy.groups()
-    else: return ""
+    if ymd:
+        y, m, d = ymd.groups()
+    elif dmy:
+        d, m, y = dmy.groups()
+    else:
+        return ""
     return f"{y}-{m}-{d}"
 
 def tesseract_gray(gray: np.ndarray):
-    clahe = cv2.createCLAHE(2.0, (8, 8)); gray = clahe.apply(gray)
+    clahe = cv2.createCLAHE(2.0, (8, 8))
+    gray  = clahe.apply(gray)
     gray  = cv2.medianBlur(gray, 3)
     sharp = np.array([[0,-1,0],[-1,5,-1],[0,-1,0]])
     gray  = cv2.filter2D(gray, -1, sharp)
     bw = cv2.adaptiveThreshold(gray, 255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY_INV, 11, 2)
-    h,_ = bw.shape; mask = np.ones_like(bw)*255; mask[:int(h*0.4),:]=0
+    h,_ = bw.shape
+    mask = np.ones_like(bw)*255
+    mask[:int(h*0.4),:] = 0
     final = cv2.bitwise_or(bw, mask)
     cfg = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789/-'
     raw = pytesseract.image_to_string(final, lang='eng', config=cfg)
@@ -69,14 +75,16 @@ def ocr_bytes(b: bytes):
     return (easy, date) if date else tesseract_gray(gray)
 
 def age_from(date: str):
-    if not date: return None, None
-    y,m,d = map(int, date.split('-'))
+    if not date:
+        return None, None
+    y, m, d = map(int, date.split('-'))
     try:
         bd  = datetime(y, m, d)
         now = datetime.now()
         age = now.year - bd.year - ((now.month,now.day) < (bd.month,bd.day))
         return age, f"{y:04d}-{m:02d}-{d:02d}"
-    except ValueError: return None, None
+    except ValueError:
+        return None, None
 
 # ======== 驗證流程 ========
 async def verify_flow(guild, member, inter):
@@ -122,11 +130,17 @@ async def verify_flow(guild, member, inter):
         await channel.send("⌛ 10 分鐘內未收到圖片")
 
     if age_ok and role:
-        try: await member.add_roles(role)
-        except: await channel.send("⚠️ 賦予身份組失敗，請通知管理員")
+        try:
+            await member.add_roles(role)
+        except Exception:
+            await channel.send("⚠️ 賦予身份組失敗，請通知管理員")
 
-    await channel.send("頻道將於 15 秒後刪除"); await asyncio.sleep(15)
-    try: await channel.delete(); except: pass
+    await channel.send("頻道將於 15 秒後刪除")
+    await asyncio.sleep(15)
+    try:
+        await channel.delete()
+    except Exception:
+        pass
 
 # ======== Slash 指令 ========
 @bot.tree.command(name="verify", description="開始年齡驗證流程")
@@ -134,7 +148,8 @@ async def slash_verify(inter: discord.Interaction):
     await verify_flow(inter.guild, inter.user, inter)
 
 class VerifyButton(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
+    def __init__(self):
+        super().__init__(timeout=None)
     @discord.ui.button(label="🔞 點我開始年齡驗證", style=discord.ButtonStyle.primary)
     async def btn(self, inter: discord.Interaction, _):
         await verify_flow(inter.guild, inter.user, inter)
@@ -148,9 +163,12 @@ async def slash_setup(inter: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"Bot Online: {bot.user}")
-    if GUILD_ID:
+    try:
         guild = discord.Object(id=GUILD_ID)
-        await bot.tree.sync(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} commands to {GUILD_ID}")
+    except Exception as e:
+        print("Slash 同步失敗：", repr(e))
     bot.add_view(VerifyButton())
 
 # ======== 主程式入口 ========
