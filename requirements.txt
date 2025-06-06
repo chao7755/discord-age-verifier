@@ -1,7 +1,7 @@
 discord.py==2.4.*
 easyocr==1.7.1
-torch==2.2.2+cpu
-torchvision==0.17.2+cpu
+torch==2.2.2            # 直接寫版本號即可，CPU 版
+torchvision==0.17.2
 opencv-python-headless==4.9.*
 waitress==3.0.*
 flask==3.*
