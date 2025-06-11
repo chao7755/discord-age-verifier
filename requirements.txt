@@ -1,25 +1,24 @@
 ###########################################################
-#  requirements.txt   （Render ➜ build 時會自動 pip install）
+# requirements.txt   （Render ➜ build 時會自動 pip install）
 ###########################################################
 
 ######## 通用 ########
-numpy==1.26.4                 # 與所有 C-ext 相容，避免 “multiarray failed to import”
+numpy==1.26.4
 typing-extensions==4.12.2
-Pillow==10.3.0                # easyocr / torchvision 共同依賴
-opencv-python-headless==4.9.0.80   # headless 版，不拉 GUI，記憶體小 80 MB
+Pillow==10.3.0
+opencv-python-headless==4.9.0.80
 
 ######## AI / OCR ########
-torch==2.2.2                  # PyPI 上就是 CPU 版；Render 安裝 OK
+torch==2.2.2          # PyPI CPU wheel，大小 ~120 MB
 torchvision==0.17.2
-easyocr==1.7.1                # 依賴 torch+opencv，已與上面版本測過
+easyocr==1.7.1
 
-######## 影像/科學計算（easyocr 需要） ########
-scipy==1.11.4                 # 與 numpy 1.26.* 編譯 ABI 相容
-scikit-image==0.22.0          # 同上；若改動請同步檢查 numpy 版本
+######## 影像 / 科學計算 ########
+scipy==1.11.4
+scikit-image==0.22.0
 
 ######## Discord bot ########
-discord.py==2.4.2             # 支援 app_commands / UI View
-# PyNaCl 僅語音用，純文字機器人可省略
+discord.py==2.5.2     # 最新版，支援 app_commands / UI View
 
 ######## Web keep-alive ########
 flask==3.0.2
