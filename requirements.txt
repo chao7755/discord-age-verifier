@@ -1,25 +1,12 @@
-###########################################################
-# requirements.txt   （Render ➜ build 時會自動 pip install）
-###########################################################
+# ---------- Discord ----------
+discord.py==2.5.2
 
-######## 通用 ########
-numpy==1.26.4
-typing-extensions==4.12.2
-Pillow==10.3.0
-opencv-python-headless==4.9.0.80
+# ---------- OCR (雲端) ----------
+requests==2.32.3     # 呼叫外部 OCR API
 
-######## AI / OCR ########
-torch==2.2.2          # PyPI CPU wheel，大小 ~120 MB
-torchvision==0.17.2
-easyocr==1.7.1
+# ---------- 影像處理 ----------
+Pillow==10.3.0        # 把使用者上傳的圖片轉成 JPG 再送 API
 
-######## 影像 / 科學計算 ########
-scipy==1.11.4
-scikit-image==0.22.0
-
-######## Discord bot ########
-discord.py==2.5.2     # 最新版，支援 app_commands / UI View
-
-######## Web keep-alive ########
+# ---------- Web keep-alive ----------
 flask==3.0.2
 waitress==3.0.0
