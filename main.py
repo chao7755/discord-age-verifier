@@ -1,6 +1,6 @@
 ###########################################################
-# main.py   (Render Free 512 MB OK) ── 2025-06-17 版本
-# -- 僅做必需修改；其餘完整保留你原先的程式碼 --
+# main.py   (Render Free 512 MB OK) ── 2025-06-18
+# --§ 只動必要處；其他完整保留 --§
 ###########################################################
 import os, re, io, asyncio, datetime, logging, threading
 
@@ -23,8 +23,7 @@ BOT_TOKEN        = os.getenv("BOT_TOKEN")
 GUILD_ID         = int(os.getenv("GUILD_ID", 0))
 VERIFIED_ROLE_ID = int(os.getenv("VERIFIED_ROLE_ID", 0))
 
-# **雲端 OCR**
-OCR_API_KEY      = os.getenv("OCR_API_KEY")           # 你在 Render 後台填的
+OCR_API_KEY      = os.getenv("OCR_API_KEY")
 OCR_ENDPOINT     = "https://api.ocr.space/parse/image"
 
 if not all([BOT_TOKEN, GUILD_ID, VERIFIED_ROLE_ID, OCR_API_KEY]):
@@ -37,36 +36,29 @@ intents.members          = True
 intents.message_content  = True
 
 
-# ────────── Bot (修：別重複建立 CommandTree) ──────────
+# ────────── Bot ──────────
 class MyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=intents)
-        # ── ↓ 這行拿掉 ↓ ──
-        # self.tree = app_commands.CommandTree(self)
-        # ── ↑ 這行拿掉 ↑ ──
 
     async def setup_hook(self):
         guild_obj = discord.Object(id=GUILD_ID)
-        # 如果想把全域指令烤進指定伺服器可保留下一行，
-        # 不想要就刪掉或註解。
-        self.tree.copy_global_to_guild(guild_obj)
+        # 直接把斜線指令同步到指定伺服器
         await self.tree.sync(guild=guild_obj)
         logging.info("Slash commands synced to guild %s", GUILD_ID)
 
 bot  = MyBot()
-tree = bot.tree      # 這裡保持不變，Bot 已自帶 tree 屬性
-
+tree = bot.tree
 
 
 
 # ---------------------------------------------------------
 #  Slash：/setupverifybutton
-#  (改：直接鎖定特定 guild，省去 copy_global_to_guild 亦可)
 # ---------------------------------------------------------
 @tree.command(
     name="setupverifybutton",
     description="（管理員）送出驗證按鈕訊息",
-    guild=discord.Object(id=GUILD_ID)          # ← ★ 新增：僅在目標伺服器註冊
+    guild=discord.Object(id=GUILD_ID)
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_verify_button(inter: Interaction):
@@ -115,7 +107,7 @@ async def send_verify_button(channel):
 
 
 # ---------------------------------------------------------
-#  驗證流程（原樣保留）
+#  驗證流程
 # ---------------------------------------------------------
 async def start_verification(inter: Interaction):
 
@@ -230,15 +222,13 @@ async def start_verification(inter: Interaction):
 
 
 # ---------------------------------------------------------
-#  Bot 連線 / 日誌
-# ---------------------------------------------------------
 @bot.event
 async def on_ready():
     logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
 
 
 
-# ────────── keep-alive （改：Render 用動態 $PORT） ──────────
+# ────────── keep-alive (Render 用動態 $PORT) ──────────
 app = Flask("alive")
 
 @app.route("/")
@@ -248,7 +238,7 @@ def ok():
 threading.Thread(
     target=lambda: serve(app,
                          host="0.0.0.0",
-                         port=int(os.getenv("PORT", 8080))),  # ← ★ 改用環境變數 PORT
+                         port=int(os.getenv("PORT", 8080))),
     daemon=True
 ).start()
 
