@@ -1,5 +1,6 @@
 ###########################################################
-# main.py   (Render Free 512 MB OK)
+# main.py   (Render Free 512 MB OK) ── 2025-06-17 版本
+# -- 僅做必需修改；其餘完整保留你原先的程式碼 --
 ###########################################################
 import os, re, io, asyncio, datetime, logging, threading
 
@@ -13,7 +14,8 @@ import requests
 from flask import Flask
 from waitress import serve
 
-# ---------- 基本設定 ----------
+
+# ────────── 基本設定 ──────────
 logging.basicConfig(level=logging.INFO,
                     format="%(levelname)s:%(name)s: %(message)s")
 
@@ -28,23 +30,49 @@ OCR_ENDPOINT     = "https://api.ocr.space/parse/image"
 if not all([BOT_TOKEN, GUILD_ID, VERIFIED_ROLE_ID, OCR_API_KEY]):
     raise RuntimeError("❌ 環境變數未填齊！BOT_TOKEN / GUILD_ID / VERIFIED_ROLE_ID / OCR_API_KEY")
 
-# ---------- Intents ----------
+
+# ────────── Intents ──────────
 intents = discord.Intents.default()
 intents.members          = True
 intents.message_content  = True
 
-# ---------- Bot ----------
-bot  = commands.Bot(command_prefix="!", intents=intents)
+
+# ────────── Bot (改：使用自訂 Bot 類 + setup_hook 做 slash 同步) ──────────
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents)
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        """Render 開機時先行同步指令到指定 guild──立刻可見。"""
+        guild_obj = discord.Object(id=GUILD_ID)
+
+        # 若想保留全域指令可刪除此行
+        self.tree.copy_global_to_guild(guild_obj)
+
+        await self.tree.sync(guild=guild_obj)
+        logging.info("Slash commands synced to guild %s", GUILD_ID)
+
+
+bot  = MyBot()
 tree = bot.tree
+
+
 
 # ---------------------------------------------------------
 #  Slash：/setupverifybutton
+#  (改：直接鎖定特定 guild，省去 copy_global_to_guild 亦可)
 # ---------------------------------------------------------
-@tree.command(name="setupverifybutton", description="（管理員）送出驗證按鈕訊息")
+@tree.command(
+    name="setupverifybutton",
+    description="（管理員）送出驗證按鈕訊息",
+    guild=discord.Object(id=GUILD_ID)          # ← ★ 新增：僅在目標伺服器註冊
+)
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_verify_button(inter: Interaction):
     await send_verify_button(inter.channel)
     await inter.response.send_message("✅ 已送出驗證訊息！", ephemeral=True)
+
 
 @setup_verify_button.error
 async def on_setup_error(inter, error):
@@ -52,6 +80,8 @@ async def on_setup_error(inter, error):
         await inter.response.send_message("❌ 只有管理員能用這個指令喔！", ephemeral=True)
     else:
         raise error
+
+
 
 # ---------------------------------------------------------
 #  UI：按鈕
@@ -63,10 +93,12 @@ class VerifyButton(ui.Button):
     async def callback(self, inter: Interaction):
         await start_verification(inter)
 
+
 class VerifyView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(VerifyButton())
+
 
 async def send_verify_button(channel):
     embed = Embed(
@@ -80,8 +112,10 @@ async def send_verify_button(channel):
     )
     await channel.send(embed=embed, view=VerifyView())
 
+
+
 # ---------------------------------------------------------
-#  驗證流程
+#  驗證流程（原樣保留）
 # ---------------------------------------------------------
 async def start_verification(inter: Interaction):
 
@@ -193,14 +227,18 @@ async def start_verification(inter: Interaction):
     await asyncio.sleep(15)
     await channel.delete(reason="驗證完成 (自動刪除)")
 
+
+
+# ---------------------------------------------------------
+#  Bot 連線 / 日誌
 # ---------------------------------------------------------
 @bot.event
 async def on_ready():
     logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
-    await tree.sync(guild=discord.Object(id=GUILD_ID))
-    logging.info("Slash commands synced.")
 
-# ---------- keep-alive ----------
+
+
+# ────────── keep-alive （改：Render 用動態 $PORT） ──────────
 app = Flask("alive")
 
 @app.route("/")
@@ -208,10 +246,14 @@ def ok():
     return "Bot is running!", 200
 
 threading.Thread(
-    target=lambda: serve(app, host="0.0.0.0", port=8080),
+    target=lambda: serve(app,
+                         host="0.0.0.0",
+                         port=int(os.getenv("PORT", 8080))),  # ← ★ 改用環境變數 PORT
     daemon=True
 ).start()
 
-# ---------- Go! ----------
+
+
+# ────────── Go! ──────────
 bot.run(BOT_TOKEN)
 ###########################################################
