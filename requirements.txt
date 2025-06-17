@@ -1,4 +1,4 @@
-discord.py @ git+https://github.com/Rapptz/discord.py@master
+discord.py==2.3
 
 # ---------- OCR (雲端) ----------
 requests==2.32.3     # 呼叫外部 OCR API
