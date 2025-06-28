@@ -78,19 +78,35 @@ async def on_setup_error(inter, error):
 # ---------------------------------------------------------
 #  UI：按鈕
 # ---------------------------------------------------------
+# 1)  給 Button 固定 custom_id（跨重啟靠它找回）
+class VerifyButton(ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="🔞點我開始年齡驗證",
+            style=discord.ButtonStyle.success,
+            custom_id="verify_button"      # ←★ 新增
+        )
+
+# 2)  把 View 宣告為 persistent
+class VerifyView(ui.View, persistent=True):   # ←★ 修改
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(VerifyButton())
+
+# 3)  在 on_ready 把 View 掛回去
+@bot.event
+async def on_ready():
+    bot.add_view(VerifyView())                # ←★ 新增（一定要）
+    logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
+
+# 4)  按鈕訊息照舊送出（這行不用動）
+await channel.send(embed=embed, view=VerifyView())
 class VerifyButton(ui.Button):
     def __init__(self):
         super().__init__(label="🔞點我開始年齡驗證", style=discord.ButtonStyle.success)
 
     async def callback(self, inter: Interaction):
         await start_verification(inter)
-
-
-class VerifyView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(VerifyButton())
-
 
 async def send_verify_button(channel):
     embed = Embed(
@@ -134,7 +150,7 @@ async def start_verification(inter: Interaction):
 
     await channel.send(
         f"👋 哈囉 {member.mention}！\n"
-        "📸 請上傳 **僅顯示『出生年月日』** 的證件照片（例如身分證背面，**請遮蓋其他個資**）。\n"
+        "📸 請上傳 **僅顯示『出生年月日』** 的證件照片（例如身分證，**請遮蓋其他個資**）。\n"
         "你有 **10 分鐘** 的時間上傳。"
     )
 
