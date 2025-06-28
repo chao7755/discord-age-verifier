@@ -1,6 +1,5 @@
 ###########################################################
-# main.py   (Render Free 512 MB OK) ── 2025-06-18
-# --§ 只動必要處；其他完整保留 --§
+# main.py   (Render Free 512 MB OK) ── 2025-06-28
 ###########################################################
 import os, re, io, asyncio, datetime, logging, threading
 
@@ -32,8 +31,8 @@ if not all([BOT_TOKEN, GUILD_ID, VERIFIED_ROLE_ID, OCR_API_KEY]):
 
 # ────────── Intents ──────────
 intents = discord.Intents.default()
-intents.members          = True
-intents.message_content  = True
+intents.members         = True
+intents.message_content = True
 
 
 # ────────── Bot ──────────
@@ -42,19 +41,16 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        guild_obj = discord.Object(id=GUILD_ID)
-        # 直接把斜線指令同步到指定伺服器
-        await self.tree.sync(guild=guild_obj)
+        await self.tree.sync(guild=discord.Object(GUILD_ID))
         logging.info("Slash commands synced to guild %s", GUILD_ID)
 
 bot  = MyBot()
 tree = bot.tree
 
 
-
-# ---------------------------------------------------------
+# ─────────────────────────────────────────────────────────
 #  Slash：/setupverifybutton
-# ---------------------------------------------------------
+# ─────────────────────────────────────────────────────────
 @tree.command(
     name="setupverifybutton",
     description="（管理員）送出驗證按鈕訊息",
@@ -74,67 +70,68 @@ async def on_setup_error(inter, error):
         raise error
 
 
-
-# ---------------------------------------------------------
-#  UI：按鈕
-# ---------------------------------------------------------
-# 1)  給 Button 固定 custom_id（跨重啟靠它找回）
+# ─────────────────────────────────────────────────────────
+#  UI：Persistent 按鈕
+# ─────────────────────────────────────────────────────────
 class VerifyButton(ui.Button):
     def __init__(self):
         super().__init__(
             label="🔞點我開始年齡驗證",
             style=discord.ButtonStyle.success,
-            custom_id="verify_button"      # ←★ 新增
+            custom_id="verify_button"      # 固定 ID
         )
 
-# 2)  把 View 宣告為 persistent
-class VerifyView(ui.View, persistent=True):   # ←★ 修改
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(VerifyButton())
-
-# 3)  在 on_ready 把 View 掛回去
-@bot.event
-async def on_ready():
-    bot.add_view(VerifyView())                # ←★ 新增（一定要）
-    logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
-
-# 4)  按鈕訊息照舊送出（這行不用動）
-await channel.send(embed=embed, view=VerifyView())
-class VerifyButton(ui.Button):
-    def __init__(self):
-        super().__init__(label="🔞點我開始年齡驗證", style=discord.ButtonStyle.success)
-
     async def callback(self, inter: Interaction):
+        await inter.response.defer(ephemeral=True)
         await start_verification(inter)
 
-async def send_verify_button(channel):
+
+class VerifyView(ui.View, persistent=True):
+    def __init__(self):
+        super().__init__(timeout=None)    # 不失效
+        self.add_item(VerifyButton())
+
+
+# ─────────────────────────────────────────────────────────
+#  Bot ready：掛回 View（舊訊息按鈕復活）
+# ─────────────────────────────────────────────────────────
+@bot.event
+async def on_ready():
+    bot.add_view(VerifyView())
+    logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
+
+
+# ─────────────────────────────────────────────────────────
+#  送出驗證訊息
+# ─────────────────────────────────────────────────────────
+async def send_verify_button(channel: discord.TextChannel):
     embed = Embed(
         title="歡迎來到本伺服器！",
         description=(
             "請點擊下方按鈕進行 **年齡驗證** 以解鎖更多頻道：\n"
             "・只需上傳 **僅顯示『出生年月日』** 的證件照（請遮擋其他資料）。\n"
-            "・AI 無法辨識時，可手動輸入生日。"
+            "・若 AI 無法辨識，可手動輸入生日。"
         ),
         color=0x8B5CF6
     )
     await channel.send(embed=embed, view=VerifyView())
 
 
-
-# ---------------------------------------------------------
+# ─────────────────────────────────────────────────────────
 #  驗證流程
-# ---------------------------------------------------------
+# ─────────────────────────────────────────────────────────
 async def start_verification(inter: Interaction):
 
     guild   : discord.Guild  = bot.get_guild(GUILD_ID)
     member  : discord.Member = guild.get_member(inter.user.id)
     role    : discord.Role   = guild.get_role(VERIFIED_ROLE_ID)
 
+    # 已有身分組
     if role in member.roles:
-        await inter.response.send_message("你已經是黃黃的妹寶啦！再點都不會更黃^^", ephemeral=True)
+        await inter.followup.send("你已經是黃黃的妹寶啦！再點都不會更黃^^", ephemeral=True)
         return
 
+    # 建立私密頻道
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         member           : discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True),
@@ -146,15 +143,15 @@ async def start_verification(inter: Interaction):
         reason="年齡驗證"
     )
 
-    await inter.response.send_message("📩 已開啟私密驗證頻道，請點擊！", ephemeral=True)
+    await inter.followup.send("📩 已開啟私密驗證頻道，請點擊！", ephemeral=True)
 
     await channel.send(
         f"👋 哈囉 {member.mention}！\n"
-        "📸 請上傳 **僅顯示『出生年月日』** 的證件照片（例如身分證，**請遮蓋其他個資**）。\n"
+        "📸 請上傳 **僅顯示『出生年月日』** 的證件照片（例如身分證背面，**請遮蓋其他個資**）。\n"
         "你有 **10 分鐘** 的時間上傳。"
     )
 
-    # -- 等圖片 --
+    # 等圖片
     def img_ok(m: discord.Message):
         return m.channel == channel and m.author == member and m.attachments
 
@@ -166,12 +163,12 @@ async def start_verification(inter: Interaction):
 
     await channel.send("⏳ 圖片收到，AI 辨識中，請稍候...")
 
-    # ---------- 呼叫雲端 OCR ----------
+    # ── 呼叫雲端 OCR ──
     img_bytes = await img_msg.attachments[0].read()
 
-    # 先轉成 jpg，避免部分 API 不收 HEIC / webp
-    img_pil   = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    buf       = io.BytesIO()
+    # 轉 jpg
+    img_pil = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    buf     = io.BytesIO()
     img_pil.save(buf, format="JPEG", quality=95)
     buf.seek(0)
 
@@ -192,7 +189,7 @@ async def start_verification(inter: Interaction):
     if m:
         birthdate_str = f"{int(m.group(1)):04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
 
-    # ---------- AI 失敗 → 手動輸入 ----------
+    # AI 失敗→手動輸入
     if birthdate_str is None:
         await channel.send(
             "⚠️ AI 無法辨識出生日期。\n"
@@ -200,7 +197,7 @@ async def start_verification(inter: Interaction):
             "你有 **5 分鐘** 的時間輸入。"
         )
 
-        def date_ok(m):
+        def date_ok(m: discord.Message):
             return m.channel == channel and m.author == member
 
         try:
@@ -210,7 +207,7 @@ async def start_verification(inter: Interaction):
             await channel.send("⌛️ 逾時未輸入，請重新開始驗證。")
             return
 
-    # ---------- 計算年齡 ----------
+    # 計算年齡
     try:
         birthdate = datetime.datetime.strptime(birthdate_str, "%Y-%m-%d").date()
     except ValueError:
@@ -224,7 +221,7 @@ async def start_verification(inter: Interaction):
         await channel.send(f"🚫 你目前 {age} 歲，未滿 18 歲，無法通過驗證。")
         return
 
-    # ---------- 通過 ----------
+    # 通過
     await channel.send(
         f"✅ AI 辨識成功！你的生日是 **{birthdate_str}**，已滿 **{age}** 歲。\n"
         "正在為你加上身份組..."
@@ -236,36 +233,28 @@ async def start_verification(inter: Interaction):
     await channel.delete(reason="驗證完成 (自動刪除)")
 
 
-
-# ---------------------------------------------------------
-@bot.event
-async def on_ready():
-    logging.info(f"Logged in as {bot.user} (ID {bot.user.id})")
-
-
-
-# ────────── keep-alive (Render 用動態 $PORT) ──────────
+# ─────────────────────────────────────────────────────────
+#  keep-alive：Flask + Waitress
+# ─────────────────────────────────────────────────────────
 app = Flask("alive")
 
 @app.route("/")
 def ok():
     return "Bot is running!", 200
-  
-# 新增這段 ↓↓↓
+
 @app.route("/health")
 def health():
     return "OK", 200
-# ↑↑↑
 
 threading.Thread(
-    target=lambda: serve(app,
-                         host="0.0.0.0",
-                         port=int(os.getenv("PORT", 8080))),
+    target=lambda: serve(
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 8080))
+    ),
     daemon=True
 ).start()
 
 
-
 # ────────── Go! ──────────
 bot.run(BOT_TOKEN)
-###########################################################
