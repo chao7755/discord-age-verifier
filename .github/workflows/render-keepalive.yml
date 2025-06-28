@@ -1,0 +1,20 @@
+name: keep-render-awake
+
+# ───────── 觸發條件 ─────────
+on:
+  schedule:
+    # */10 代表「每五分鐘」；GitHub 使用 UTC
+    - cron: "*/5 * * * *"
+  workflow_dispatch:      # ← 想手動測試時可點 Run workflow
+
+# ───────── 單一 Job ─────────
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl to Render health endpoint
+        run: |
+          curl -m 10 -fsSL https://discord-age-verifier.onrender.com/health \
+          && echo "Ping OK $(date)"
+          # 若失敗仍結束 0，不讓工作紅字
+        continue-on-error: true
