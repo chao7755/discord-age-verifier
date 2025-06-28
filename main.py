@@ -234,6 +234,12 @@ app = Flask("alive")
 @app.route("/")
 def ok():
     return "Bot is running!", 200
+  
+# 新增這段 ↓↓↓
+@app.route("/health")
+def health():
+    return "OK", 200
+# ↑↑↑
 
 threading.Thread(
     target=lambda: serve(app,
