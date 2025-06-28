@@ -86,10 +86,12 @@ class VerifyButton(ui.Button):
         await start_verification(inter)
 
 
-class VerifyView(ui.View, persistent=True):
+# 把 VerifyView 宣告改成 ↓↓↓
+class VerifyView(ui.View):          # 去掉 persistent=True
     def __init__(self):
-        super().__init__(timeout=None)    # 不失效
+        super().__init__(timeout=None)   # 無限存活
         self.add_item(VerifyButton())
+
 
 
 # ─────────────────────────────────────────────────────────
